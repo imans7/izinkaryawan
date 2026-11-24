@@ -1,6 +1,13 @@
-# Personnel Desk 2.0 — Neon Database
+# Personnel Desk 2.2 — Neon Database
 
 Aplikasi manajemen karyawan dan pengajuan izin, frontend HTML/CSS/JavaScript, API Node.js, PostgreSQL Neon. Dibuat untuk deployment Vercel. Jangan membuka `public/index.html` langsung sebagai file karena API tidak akan tersedia.
+
+## Update dari versi 2.1 (deployment yang sudah berjalan)
+
+- Backup JSON terlebih dahulu. Ganti `public/index.html` dan `lib/validation.js` di repository yang sama (opsional: `package.json` dan README untuk versi). Commit keduanya bersama lalu deploy ulang. **Tidak perlu menjalankan schema.sql, restore, membuat database baru atau mengganti environment variables**. Field baru disimpan dalam JSONB yang sudah ada. Jangan menggunakan frontend baru dengan validator server lama karena jabatan akan hilang saat penyimpanan.
+- Edit profil karyawan untuk memilih jabatan HRD/Manager/Supervisor (opsional). Banyak orang boleh memiliki jabatan sama. Dalam surat baru, pilihan satu divisi diutamakan; satu kandidat dalam kelompok prioritas terpilih otomatis. Jika ada beberapa, pilih manual. HRD dapat lintas divisi; tanpa divisi dianggap umum. Manager/Supervisor divisi lain tetap dapat dipilih secara manual. Pejabat nonaktif dan pemohon tidak ditawarkan. Surat lama tetap menyimpan nama historis.
+- Kolom Jabatan opsional di impor master (template lama tetap diterima; jika kolom tidak ada, jabatan lama dipertahankan). Backup Excel/JSON menyertakan jabatan serta NIK internal pejabat. Backup lama tetap dapat dipulihkan, tetapi restore mengganti database; tidak diperlukan untuk upgrade.
+- Dropdown pengganti menampilkan nama/divisi/NIK untuk membedakan nama sama; surat PDF/Excel hanya mencetak nama pengganti. NIK pemohon tetap di No. Absen sesuai template. Template asli dan ukuran F revisi tidak diubah.
 
 ## 1. Neon
 
@@ -61,4 +68,4 @@ NIK adalah primary key pada `personnel_desk.employees`. Riwayat izin memakai ID 
 
 - Versi ini memakai satu kata sandi akses internal (HRD/admin bersama), bukan akun individual, bukan RBAC, dan belum mempunyai audit log per pengguna. Nama HRD/Manager/Supervisor adalah field dokumen, bukan tanda tangan digital atau autentikasi masing-masing pejabat.
 - Jangan gunakan akses publik tanpa kontrol organisasi. Gunakan HTTPS Vercel, password acak yang kuat, batasi siapa yang mengetahui password, dan pertimbangkan SSO/role, rate limiting serta audit log sebelum pemakaian produksi berskala besar. Backup berisi data pribadi; simpan di tempat yang terlindungi.
-- Koneksi Neon nyata belum diuji karena tidak ada kredensial/project Neon yang diberikan. Pengujian frontend memakai API simulasi: login, tambah dua karyawan, pembuatan izin, update statistik, dan unduh Excel berhasil. Pemeriksaan sintaks JavaScript dan integritas ZIP Excel lulus.
+- Koneksi Neon nyata belum diuji karena tidak ada kredensial/project Neon yang diberikan. Pengujian deployment Neon produksi perlu dilakukan pada project Anda setelah update.
