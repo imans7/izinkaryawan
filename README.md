@@ -18,6 +18,7 @@ Versi ini merombak V3 menjadi sistem internal dengan **dua peran saja: Admin dan
 - **Unduh Excel di Data Karyawan** (`Data-Personnel-Desk.xlsx`): Sheet 1 Data Karyawan, Sheet 2 Data User (tanpa password; hanya Admin), lalu satu sheet per karyawan berisi seluruh suratnya dari awal hingga akhir, dan terakhir sheet Semua Izin. Nama file selalu sama sehingga bisa menimpa file lama (di Chrome/Edge muncul dialog simpan yang menawarkan Replace).
 - **Backup Data** (Admin): unduh backup JSON, unduh salinan Excel, dan pulihkan dari JSON (menambah/menimpa data dengan NIK/ID yang sama, tidak menghapus).
 - **Unduhan form Excel** kini hanya berisi satu formulir (tanpa formulir lain, tanpa sheet kosong), kolom Keperluan hanya berisi keperluan. Surat izin dapat dihapus oleh Admin (tombol Hapus).
+- **Rekap form surat izin**: halaman Form Surat Izin punya filter tanggal (periode izin yang beririsan dengan rentang), tombol "Bulan ini", Reset, dan **Unduh Excel**. File berisi semua surat hasil filter (nama, status, kategori ikut terfilter), disusun dari atas ke bawah berurutan tanggal izin, satu formulir per halaman cetak (maks. 500 surat per unduhan).
 - Validasi `form-save` diperketat (hanya field yang dikenal yang disimpan). **Tidak ada migrasi SQL baru.**
 
 ## Struktur
