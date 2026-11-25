@@ -1,6 +1,6 @@
 {
   "name": "personnel-desk-v4",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.1"
   }
 }

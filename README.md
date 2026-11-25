@@ -11,6 +11,14 @@ Versi ini merombak V3 menjadi sistem internal dengan **dua peran saja: Admin dan
 - Eksekutif bersifat read-only: melihat data karyawan, form, laporan, dan mengunduh dokumen. Tidak dapat membuat atau mengubah data.
 - Master karyawan tetap menggunakan NIK sebagai primary key internal. NIK tampil pada baris No. Absen pada surat sesuai template.
 
+## Pembaruan V4.1
+- **Perbaikan unduh Excel**: error `Cannot read properties of undefined (reading 'anchors')` terjadi karena ExcelJS gagal membaca template. Sekarang template diisi langsung di level XML (`lib/form-xlsx.js`), sehingga logo, border, dan layout asli tetap utuh. Dependensi baru: `jszip`.
+- **Kategori izin**: Cuti, Sakit, Izin, Izin Pulang Cepat (wajib dipilih; Izin Pulang Cepat memakai satu tanggal + jam pulang). Surat lama tanpa kategori dianggap "Izin". Kategori tampil di daftar, laporan, preview, dan Excel.
+- **Aktif/Nonaktif karyawan**: tombol di Data Karyawan + filter status. Karyawan nonaktif tidak muncul di form baru; riwayat tetap tersimpan. Edit karyawan tidak lagi mereset status.
+- **Unduh Excel di Data Karyawan** (`Data-Personnel-Desk.xlsx`): Sheet 1 Data Karyawan, Sheet 2 Data User (tanpa password; hanya Admin), lalu satu sheet per karyawan berisi seluruh suratnya dari awal hingga akhir, dan terakhir sheet Semua Izin. Nama file selalu sama sehingga bisa menimpa file lama (di Chrome/Edge muncul dialog simpan yang menawarkan Replace).
+- **Backup Data** (Admin): unduh backup JSON, unduh salinan Excel, dan pulihkan dari JSON (menambah/menimpa data dengan NIK/ID yang sama, tidak menghapus).
+- Validasi `form-save` diperketat (hanya field yang dikenal yang disimpan). **Tidak ada migrasi SQL baru.**
+
 ## Struktur
 - `api/portal.js`: API login, role access, CRUD karyawan, akun eksekutif, form surat, tanda tangan, Excel.
 - `public/index.html`: UI V3-style, dashboard, tabel, form, preview, print.
