@@ -1,71 +1,153 @@
-# Personnel Desk 2.2 — Neon Database
+# Personnel Desk V3.0 — Sistem Manajemen & Persetujuan Izin Karyawan
 
-Aplikasi manajemen karyawan dan pengajuan izin, frontend HTML/CSS/JavaScript, API Node.js, PostgreSQL Neon. Dibuat untuk deployment Vercel. Jangan membuka `public/index.html` langsung sebagai file karena API tidak akan tersedia.
+Personnel Desk V3 memperluas Personnel Desk V2.3 menjadi aplikasi multi-peran dengan alur persetujuan dua tahap. Stack: HTML/CSS/JavaScript, Vercel Serverless Functions, Neon PostgreSQL, dan QR Code.
 
-## Update dari versi 2.1 (deployment yang sudah berjalan)
+## Fitur V3.0
 
-- Backup JSON terlebih dahulu. Ganti `public/index.html` dan `lib/validation.js` di repository yang sama (opsional: `package.json` dan README untuk versi). Commit keduanya bersama lalu deploy ulang. **Tidak perlu menjalankan schema.sql, restore, membuat database baru atau mengganti environment variables**. Field baru disimpan dalam JSONB yang sudah ada. Jangan menggunakan frontend baru dengan validator server lama karena jabatan akan hilang saat penyimpanan.
-- Edit profil karyawan untuk memilih jabatan HRD/Manager/Supervisor (opsional). Banyak orang boleh memiliki jabatan sama. Dalam surat baru, pilihan satu divisi diutamakan; satu kandidat dalam kelompok prioritas terpilih otomatis. Jika ada beberapa, pilih manual. HRD dapat lintas divisi; tanpa divisi dianggap umum. Manager/Supervisor divisi lain tetap dapat dipilih secara manual. Pejabat nonaktif dan pemohon tidak ditawarkan. Surat lama tetap menyimpan nama historis.
-- Kolom Jabatan opsional di impor master (template lama tetap diterima; jika kolom tidak ada, jabatan lama dipertahankan). Backup Excel/JSON menyertakan jabatan serta NIK internal pejabat. Backup lama tetap dapat dipulihkan, tetapi restore mengganti database; tidak diperlukan untuk upgrade.
-- Dropdown pengganti menampilkan nama/divisi/NIK untuk membedakan nama sama; surat PDF/Excel hanya mencetak nama pengganti. NIK pemohon tetap di No. Absen sesuai template. Template asli dan ukuran F revisi tidak diubah.
+### Empat peran
+- **Karyawan:** scan QR, login, mengisi formulir izin keluar, melihat status dan riwayat, memperbaiki pengajuan yang ditolak, serta mencetak/menyimpan surat PDF setelah disetujui.
+- **Admin:** ringkasan, seluruh surat izin, laporan dan ekspor Excel, manajemen akun, master karyawan, pengaturan QR, profil, dan ubah password.
+- **HRD:** antrean verifikasi tahap 1, setujui untuk meneruskan ke Manajer atau tolak dengan alasan.
+- **Manajer:** antrean verifikasi tahap 2, setujui sebagai keputusan akhir atau tolak dengan alasan.
 
-## 1. Neon
+### Alur dan status
+`menunggu_hrd` → `menunggu_manager` → `disetujui` / `ditolak`.
 
-1. Buat/buka project di https://console.neon.tech/ . Pilih branch dan database tujuan. Untuk pemakaian produksi disarankan branch/database khusus agar terpisah dari proyek lain.
-2. Buka SQL Editor, pastikan branch/database benar. Salin isi `schema.sql`, lalu Run. Skrip membuat schema `personnel_desk` dengan tabel `employees`, `leaves`, `state`, dan fungsi transaksi `save_database`. Tidak ada DROP/TRUNCATE pada skrip ini. Menjalankan ulang skrip tidak menghapus data yang sudah tersimpan.
-3. Di halaman Connect, pilih connection string pooled (PostgreSQL), lalu salin. Jangan mengirim connection string atau password ke publik.
+Jika HRD atau Manajer menolak, karyawan menerima notifikasi dan dapat memperbaiki lalu mengirim ulang. Pengiriman ulang mengembalikan status ke `menunggu_hrd`; catatan dan riwayat keputusan sebelumnya tetap tercatat di workflow history.
 
-## 2. GitHub dan Vercel
+### Master karyawan
+Admin dapat menambah/mengedit master karyawan, mengimpor Excel/CSV dengan NIK sebagai kunci update, mengunduh template Excel, dan mengekspor master ke Excel. Baris yang tidak ada dalam file impor tidak dihapus.
 
-1. Ekstrak ZIP. Buat repository private di https://github.com/new dan upload **isi** folder `personnel-desk-final`, termasuk `api`, `lib`, `public`, `package.json`, `schema.sql`, `vercel.json`, `.gitignore`. Jangan upload `.env` dengan kredensial asli. `.env.example` hanya contoh.
-2. Di https://vercel.com/new , import repository tersebut. Framework Preset: Other; Root Directory: folder yang memuat `package.json`; Node.js: 22.x. `vercel.json` telah mengatur output `public` dan build command.
-3. Pada Environment Variables, tambahkan:
+### Formulir QR
+- Nama, jabatan, dan divisi ditarik dari master karyawan yang terhubung dengan akun.
+- Tanggal izin dapat dipilih; jam keluar dicatat otomatis oleh server saat pengajuan disimpan (Asia/Jakarta).
+- Jam kembali, keperluan, dan nomor WhatsApp diisi karyawan.
+- QR umum membuka halaman login; setelah karyawan login, formulir pengajuan langsung dibuka.
 
-| Nama | Isi |
+### Notifikasi
+Notifikasi tersimpan di Neon dan muncul di dalam aplikasi untuk karyawan, HRD, dan Manajer. Nomor WhatsApp dicatat dalam pengajuan, tetapi **pengiriman pesan WhatsApp otomatis belum diaktifkan** karena memerlukan integrasi WhatsApp Business/API provider dan kredensial tersendiri.
+
+### Surat PDF
+Surat hanya tersedia setelah Manajer menyetujui. Tombol PDF membuka dialog cetak browser; pilih **Save as PDF / Simpan sebagai PDF** untuk mengunduh.
+
+### Penugasan HRD/Manajer berdasarkan divisi
+- Akun HRD/Manajer yang dihubungkan ke salah satu karyawan master hanya menerima/memproses pengajuan dari divisi karyawan tersebut.
+- Akun HRD/Manajer tanpa tautan NIK menjadi akun global yang dapat menangani semua divisi.
+- Bisa ada beberapa akun HRD atau Manajer pada satu divisi.
+- Pengajuan baru tidak dapat dikirim jika belum ada HRD dan Manajer aktif yang sesuai dengan divisi pemohon.
+
+## Penting sebelum upgrade dari V2.3
+
+1. Buat backup dari aplikasi V2.3 sebagai tindakan pencegahan.
+2. Gunakan **Neon branch dan database yang sama** dengan Personnel Desk V2.3. Jangan membuat project database baru.
+3. V3 mempertahankan tabel lama `employees`, `leaves`, dan `state`. Riwayat formulir lama ditampilkan pada menu **Arsip Izin Lama** Admin.
+4. Jangan jalankan `schema-legacy-v2.sql` lagi. File itu hanya disertakan sebagai referensi skema lama.
+5. Jalankan `schema-v3.sql` satu kali di Neon SQL Editor. Skrip ini bersifat additive: membuat tabel akun, pengajuan QR, notifikasi, riwayat alur, pengaturan, dan fungsi upsert master karyawan. Tidak ada DROP/TRUNCATE dan tidak menghapus data V2.3.
+
+## 1. Migrasi Neon
+
+1. Buka https://console.neon.tech/ .
+2. Pilih project, branch, dan database yang saat ini dipakai V2.3.
+3. Buka **SQL Editor**.
+4. Salin seluruh isi `schema-v3.sql`, lalu klik **Run**.
+5. Pastikan query selesai tanpa error. Jangan menjalankan migrasi pada branch/database yang berbeda dari `DATABASE_URL` Vercel.
+
+## 2. Deploy ke GitHub dan Vercel
+
+1. Ekstrak ZIP.
+2. Upload **isi folder** `personnel-desk-final` ke root repository GitHub yang sudah terhubung ke project Vercel. Pastikan folder `api`, `lib`, dan `public` ikut terunggah.
+3. Commit dan push ke production branch (biasanya `main`).
+4. Vercel akan memasang dependency `@neondatabase/serverless` dan `qrcode` dari `package.json`, lalu melakukan deployment.
+5. Tunggu deployment Production berstatus **Ready**. Buka domain produksi dan lakukan hard refresh (`Ctrl + F5`).
+
+Pengaturan Vercel:
+- Framework Preset: Other
+- Root Directory: folder yang berisi `package.json`
+- Build Command: `npm run build`
+- Output Directory: `public`
+- Node.js: 22.x
+
+## 3. Environment Variables Vercel
+
+Pertahankan `DATABASE_URL` Neon pooled yang sudah dipakai V2.3. Jangan mengubahnya jika sudah benar.
+
+| Variable | Nilai |
 |---|---|
-| `DATABASE_URL` | Connection string pooled dari Neon, lengkap dengan SSL |
-| `APP_PASSWORD` | Password akses HRD yang kuat, acak, minimal 16 karakter ASCII; buat sendiri |
+| `DATABASE_URL` | Connection string pooled Neon yang sudah digunakan V2.3 |
+| `APP_PASSWORD` | Password lama V2.3; dipakai untuk membuat akun Admin pertama jika `ADMIN_PASSWORD` tidak diisi |
+| `ADMIN_USERNAME` | Opsional; default `admin` |
+| `ADMIN_PASSWORD` | Opsional; password awal Admin. Jika diisi, gunakan minimal 16 karakter; ini yang dipakai sebagai password awal |
+| `SESSION_SECRET` | Sangat disarankan: string acak minimal 32 karakter untuk menandatangani sesi login |
+| `ADMIN_NAME` | Opsional; nama tampilan Admin awal, default `Administrator` |
 
-Pilih Production (dan Development/Preview hanya jika memakai database yang tepat). Jangan menambahkan `NEXT_PUBLIC_` atau `VITE_` ke variabel ini. URL database tidak pernah masuk ke frontend.
+`APP_PASSWORD` lama minimal 16 karakter sesuai pemeriksaan V2.3. Jika ingin mengganti APP_PASSWORD atau menghapusnya setelah upgrade, atur `SESSION_SECRET` terlebih dahulu. Jika `SESSION_SECRET` tidak diisi, aplikasi memakai `APP_PASSWORD` atau `ADMIN_PASSWORD` sebagai fallback.
 
-4. Klik Deploy. Buka URL deployment dan masukkan APP_PASSWORD. Jika menambahkan variabel setelah deploy, lakukan Redeploy.
-5. Uji satu karyawan dan satu pengajuan contoh. Buka ulang di browser lain dan masukkan password yang sama untuk melihat data. Hapus pengajuan contoh setelah uji bila diperlukan.
+Setelah mengubah Environment Variables, lakukan Redeploy.
 
-## 3. Menjalankan lokal (opsional)
+## 4. Login pertama dan pembuatan akun
 
-Install Node.js 22, jalankan `npm install` di root proyek. Salin `.env.example` ke `.env.local` dan isi dengan nilai sebenarnya. Gunakan `npx vercel dev` (login Vercel dan link project bila diminta). Database tetap Neon, bukan LocalStorage. Hindari menjalankan uji pada database produksi.
+Jika belum ada akun Admin V3, API membuat akun pertama secara otomatis saat percobaan login pertama:
+- Username: `ADMIN_USERNAME` atau `admin`.
+- Password: `ADMIN_PASSWORD` jika tersedia; jika tidak, gunakan nilai `APP_PASSWORD` lama V2.3.
 
-## 4. Alur penggunaan
+Setelah login Admin:
 
-- Download Template Excel untuk master karyawan; isi NIK dan nomor HP sebagai teks agar angka nol awal tidak hilang. Gunakan tanggal YYYY-MM-DD atau DD/MM/YYYY.
-- Impor Excel/CSV. NIK yang telah ada diperbarui; riwayat izin tetap tersimpan. Status karyawan dapat diubah melalui Edit Profil.
-- Klik karyawan, Buat Surat Izin, isi tanggal, kategori, keperluan dan pengganti. Bagian persetujuan dapat diedit sesudahnya.
-- Klik Simpan. Setelah Neon mengonfirmasi penyimpanan, pratinjau muncul. Pilih Cetak/Simpan PDF (A4) atau Download Excel.
-- Surat Excel memakai blok formulir kosong pada baris 27–48 dari template perusahaan yang diunggah, dipindah menjadi baris 1–22 untuk satu surat per file. Logo, style, garis, ukuran kolom, tinggi baris, merged cells asli dan tabel tanda tangan dipertahankan. Untuk isian panjang, area nilai bisa digabung dan tinggi baris ditambah agar teks terlihat. No. Absen diisi NIK. PDF/HTML adalah reproduksi tampilan; file Excel memakai template asli. Keterangan kategori dimasukkan bersama keperluan.
-- Backup & Restore mendukung JSON dan workbook Excel backup (bukan file surat). Restore mengganti database aplikasi setelah konfirmasi. Backup dulu sebelum restore.
-- Untuk memindahkan data dari aplikasi HTML lama: buka aplikasi lama pada browser asal, gunakan Backup JSON, kemudian Restore JSON di versi Neon. Impor master Excel saja tidak memindahkan riwayat. Jangan hapus data browser lama sampai migrasi diverifikasi.
-- Tombol Muat ulang mengambil versi terbaru dari Neon. Jika data berubah pada perangkat lain sebelum disimpan, aplikasi menolak penyimpanan konflik; tutup formulir, klik Muat ulang dan ulangi perubahan.
+1. Buka **Data Pengguna**.
+2. Buat minimal satu akun HRD dan satu akun Manajer.
+3. Untuk HRD/Manajer yang hanya bertanggung jawab pada satu divisi, tautkan akun ke data karyawan master dari divisi tersebut. Biarkan tautan NIK kosong untuk akun global.
+4. Buat akun Karyawan dan hubungkan ke NIK yang tepat pada master karyawan. Setiap karyawan hanya boleh memiliki satu akun Karyawan.
+5. Berikan username dan password awal kepada pemilik akun melalui jalur internal yang aman. Pengguna dapat mengubah password sendiri melalui Profil.
 
-## 5. Struktur
+Pastikan data master karyawan dan divisi sudah benar sebelum membuat akun HRD/Manajer berbasis divisi.
 
-```
+## 5. Menggunakan QR
+
+1. Login sebagai Admin.
+2. Buka **Pengaturan & QR**.
+3. Pastikan formulir QR berstatus Aktif.
+4. Cetak atau bagikan QR yang tampil. Link QR mengarah ke `/?scan=1` pada domain produksi.
+5. Karyawan scan QR, login dengan akun Karyawan, kemudian formulir terbuka otomatis.
+6. Setelah submit, sistem mencatat jam keluar dari waktu server. Karyawan dan HRD yang sesuai divisi menerima notifikasi dalam aplikasi.
+
+Jika formulir ditutup dari Pengaturan, pengajuan baru akan ditolak oleh API meskipun QR lama masih beredar.
+
+## 6. Pengelolaan pengajuan
+
+- HRD memeriksa antrean `menunggu_hrd`. Setujui untuk meneruskan ke Manajer, atau tolak dengan alasan yang wajib diisi.
+- Manajer memeriksa antrean `menunggu_manager`. Setujui untuk menyelesaikan proses, atau tolak dengan alasan.
+- Karyawan melihat semua perubahan status dan catatan penolakan di Riwayat Pengajuan.
+- Pengajuan ditolak dapat diperbaiki dan dikirim ulang. Riwayat penolakan sebelumnya tidak dihapus.
+- Surat PDF tersedia setelah status `disetujui`.
+- Admin dapat memfilter laporan berdasarkan tanggal/status dan mengunduh Excel.
+
+## 7. Keamanan dan catatan operasional
+
+- Password disimpan sebagai hash scrypt dengan salt acak; password plaintext tidak disimpan.
+- Login menggunakan cookie sesi HttpOnly, Secure di Vercel, SameSite=Strict, masa berlaku 12 jam.
+- Percobaan login dibatasi secara persisten di Neon; setelah beberapa percobaan gagal akun/IP terkait ditahan sementara.
+- Semua aksi baca/tulis dibatasi berdasarkan peran di backend, bukan hanya disembunyikan di tampilan.
+- Keputusan HRD/Manajer dicatat di `workflow_events`; status, waktu, dan catatan penolakan tersimpan di Neon.
+- Penghapusan akun dilakukan dengan menonaktifkan akun, bukan menghapus histori persetujuan.
+- Endpoint snapshot V2 `/api/database` dinonaktifkan pada V3 agar login bersama V2 tidak menjadi jalur bypass RBAC. Frontend V3 menggunakan `/api/portal`.
+- Simpan `DATABASE_URL`, `APP_PASSWORD`, `ADMIN_PASSWORD`, dan `SESSION_SECRET` hanya di Environment Variables Vercel. Jangan commit `.env` ke GitHub.
+- Pengujian pada Neon produksi harus dilakukan setelah migrasi dan deployment di project Anda; lingkungan ini tidak memiliki akses ke kredensial Neon Anda.
+
+## Struktur folder
+
+```text
 personnel-desk-final/
-  api/database.js          # API GET/PUT berpassword, komunikasi Neon
-  lib/validation.js        # validasi server untuk karyawan dan izin
-  public/index.html        # dashboard, formulir, impor, cetak, backup
-  public/template-form.json # paket OOXML template, tanpa data contoh lama
-  public/logo.jpeg         # logo dari template
-  schema.sql               # inisialisasi Neon, transaksi dan revision lock
+  api/
+    portal.js             # API auth, role access, requests, approvals, notifications
+    database.js          # menonaktifkan endpoint snapshot V2
+  lib/
+    validation.js        # validator lama sebagai referensi kompatibilitas
+  public/
+    index.html            # aplikasi V3
+    logo.jpeg
+    template-form.json    # aset template lama
+  schema-v3.sql           # migrasi additive V3
+  schema-legacy-v2.sql    # arsip skema V2.3; jangan dijalankan ulang
   package.json
   vercel.json
   .env.example
-  .gitignore
 ```
-
-NIK adalah primary key pada `personnel_desk.employees`. Riwayat izin memakai ID pengajuan unik dan foreign key NIK; snapshot identitas mempertahankan data surat lama. Penyimpanan diproses atomik di PostgreSQL; tidak ada fallback LocalStorage. API memvalidasi payload dan versi data. Aplikasi mengirim snapshot database per penyimpanan, dengan batas permintaan sekitar 4 MB; untuk volume besar gunakan API per record dan pagination.
-
-## 6. Catatan keamanan dan batasan
-
-- Versi ini memakai satu kata sandi akses internal (HRD/admin bersama), bukan akun individual, bukan RBAC, dan belum mempunyai audit log per pengguna. Nama HRD/Manager/Supervisor adalah field dokumen, bukan tanda tangan digital atau autentikasi masing-masing pejabat.
-- Jangan gunakan akses publik tanpa kontrol organisasi. Gunakan HTTPS Vercel, password acak yang kuat, batasi siapa yang mengetahui password, dan pertimbangkan SSO/role, rate limiting serta audit log sebelum pemakaian produksi berskala besar. Backup berisi data pribadi; simpan di tempat yang terlindungi.
-- Koneksi Neon nyata belum diuji karena tidak ada kredensial/project Neon yang diberikan. Pengujian deployment Neon produksi perlu dilakukan pada project Anda setelah update.
