@@ -17,6 +17,7 @@ Versi ini merombak V3 menjadi sistem internal dengan **dua peran saja: Admin dan
 - **Aktif/Nonaktif karyawan**: tombol di Data Karyawan + filter status. Karyawan nonaktif tidak muncul di form baru; riwayat tetap tersimpan. Edit karyawan tidak lagi mereset status.
 - **Unduh Excel di Data Karyawan** (`Data-Personnel-Desk.xlsx`): Sheet 1 Data Karyawan, Sheet 2 Data User (tanpa password; hanya Admin), lalu satu sheet per karyawan berisi seluruh suratnya dari awal hingga akhir, dan terakhir sheet Semua Izin. Nama file selalu sama sehingga bisa menimpa file lama (di Chrome/Edge muncul dialog simpan yang menawarkan Replace).
 - **Backup Data** (Admin): unduh backup JSON, unduh salinan Excel, dan pulihkan dari JSON (menambah/menimpa data dengan NIK/ID yang sama, tidak menghapus).
+- **Unduhan form Excel** kini hanya berisi satu formulir (tanpa formulir lain, tanpa sheet kosong), kolom Keperluan hanya berisi keperluan. Surat izin dapat dihapus oleh Admin (tombol Hapus).
 - Validasi `form-save` diperketat (hanya field yang dikenal yang disimpan). **Tidak ada migrasi SQL baru.**
 
 ## Struktur
