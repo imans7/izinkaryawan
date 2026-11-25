@@ -1,222 +1,64 @@
 import { neon } from '@neondatabase/serverless';
-import QRCode from 'qrcode';
-import { createHmac, createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import ExcelJS from 'exceljs';
+import path from 'node:path';
 
-const scrypt = promisify(scryptCb);
-const ROLES = new Set(['admin','hrd','manager','employee']);
-const STATUS = new Set(['menunggu_hrd','menunggu_manager','disetujui','ditolak']);
-const clean = v => String(v ?? '').trim();
-const todayJakarta = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-const timeJakarta = () => new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Jakarta',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
-const json = (res,status,payload) => res.status(status).json(payload);
-const sqlClient = () => { if(!process.env.DATABASE_URL) throw new Error('DATABASE_URL belum dikonfigurasi.'); return neon(process.env.DATABASE_URL); };
-const sessionSecret = () => { const s=process.env.SESSION_SECRET || process.env.APP_PASSWORD || process.env.ADMIN_PASSWORD; if(!s || s.length<16) throw new Error('Atur SESSION_SECRET (minimal 32 karakter) atau APP_PASSWORD/ADMIN_PASSWORD yang kuat (minimal 16 karakter).'); return s; };
-const sign = value => createHmac('sha256',sessionSecret()).update(value).digest('base64url');
-const makeToken = user => { const payload=Buffer.from(JSON.stringify({uid:user.id,exp:Date.now()+12*60*60*1000})).toString('base64url'); return `${payload}.${sign(payload)}`; };
-const cookieHeader = (req,value,maxAge) => { const secure=process.env.VERCEL || req.headers['x-forwarded-proto']==='https'; return `pd_session=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure?'; Secure':''}`; };
-function getCookie(req,name){const raw=req.headers.cookie||'';for(const p of raw.split(';')){const i=p.indexOf('=');if(i>0&&p.slice(0,i).trim()===name)return decodeURIComponent(p.slice(i+1).trim());}return '';}
-function verifyToken(token){try{const [payload,sig]=token.split('.');if(!payload||!sig)return null;const expected=Buffer.from(sign(payload));const actual=Buffer.from(sig);if(expected.length!==actual.length||!timingSafeEqual(expected,actual))return null;const data=JSON.parse(Buffer.from(payload,'base64url').toString());if(!data.uid||data.exp<Date.now())return null;return data;}catch{return null;}}
-async function hashPassword(password,salt=randomBytes(16).toString('hex')){const derived=await scrypt(password,salt,64);return {salt,hash:Buffer.from(derived).toString('hex')};}
-async function checkPassword(password,salt,stored){try{const got=Buffer.from(await scrypt(password,salt,64));const want=Buffer.from(stored,'hex');return got.length===want.length&&timingSafeEqual(got,want);}catch{return false;}}
-function parseBody(req){if(typeof req.body==='string')return JSON.parse(req.body||'{}');return req.body||{};}
-function sameOrigin(req){const origin=req.headers.origin;if(!origin)return true;try{return new URL(origin).host===req.headers.host;}catch{return false;}}
-async function bootstrapAdmin(sql){const [count]=await sql`SELECT count(*)::int AS n FROM personnel_desk.users WHERE role='admin'`;if(Number(count.n)>0)return;const username=clean(process.env.ADMIN_USERNAME||'admin').toLowerCase();const password=process.env.ADMIN_PASSWORD||process.env.APP_PASSWORD;if(!password||password.length<16)throw new Error('Belum ada admin. Atur ADMIN_PASSWORD (minimal 16 karakter) atau APP_PASSWORD lama untuk membuat akun awal.');const fullName=clean(process.env.ADMIN_NAME||'Administrator');const h=await hashPassword(password);await sql`INSERT INTO personnel_desk.users(username,full_name,role,password_salt,password_hash) VALUES(${username},${fullName},'admin',${h.salt},${h.hash}) ON CONFLICT(username) DO NOTHING`;}
-async function sessionUser(sql,req){const token=verifyToken(getCookie(req,'pd_session'));if(!token)return null;const [u]=await sql`SELECT id,username,full_name,role,employee_nik,is_active FROM personnel_desk.users WHERE id=${token.uid}::uuid`;if(!u||!u.is_active)return null;let employee=null;if(u.employee_nik){const [e]=await sql`SELECT data FROM personnel_desk.employees WHERE nik=${u.employee_nik}`;employee=e?.data||null;}return {...u,employee};}
-function requireRole(user,...roles){if(!user)throw Object.assign(new Error('Sesi login tidak ditemukan. Silakan masuk kembali.'),{status:401});if(!roles.includes(user.role))throw Object.assign(new Error('Anda tidak memiliki izin untuk melakukan tindakan ini.'),{status:403});}
-function validDate(s){return /^\d{4}-\d{2}-\d{2}$/.test(s)&&!Number.isNaN(Date.parse(s+'T00:00:00Z'))&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;}
-function validateRequestInput(body){const requestDate=clean(body.request_date)||todayJakarta(),returnTime=clean(body.return_time),reason=clean(body.reason),whatsapp=clean(body.whatsapp);if(!validDate(requestDate))throw Object.assign(new Error('Tanggal pengajuan tidak valid.'),{status:400});if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(returnTime))throw Object.assign(new Error('Jam kembali wajib diisi dengan format HH:MM.'),{status:400});if(requestDate===todayJakarta()&&returnTime<=timeJakarta())throw Object.assign(new Error('Jam kembali harus lebih besar dari jam keluar otomatis saat ini.'),{status:400});if(!reason||reason.length>2000)throw Object.assign(new Error('Keperluan wajib diisi (maksimal 2.000 karakter).'),{status:400});if(whatsapp.replace(/\D/g,'').length<8||whatsapp.length>40)throw Object.assign(new Error('Nomor WhatsApp tidak valid.'),{status:400});return {requestDate,returnTime,reason,whatsapp};}
-async function ensurePublicForm(sql){const [r]=await sql`SELECT value FROM personnel_desk.settings WHERE key='public_form_enabled'`;return r?.value===true;}
-
+const scrypt=promisify(scryptCb);
+const ROLES=new Set(['admin','executive']);
+const clean=v=>String(v??'').trim();
+const json=(res,status,payload)=>res.status(status).json(payload);
+const sqlClient=()=>{if(!process.env.DATABASE_URL)throw new Error('DATABASE_URL belum dikonfigurasi.');return neon(process.env.DATABASE_URL);};
+const secret=()=>{const s=process.env.SESSION_SECRET||process.env.APP_PASSWORD;if(!s||s.length<16)throw new Error('Atur SESSION_SECRET minimal 32 karakter.');return s;};
+const sign=v=>createHmac('sha256',secret()).update(v).digest('base64url');
+const tokenFor=u=>{const p=Buffer.from(JSON.stringify({uid:u.id,exp:Date.now()+12*60*60*1000})).toString('base64url');return `${p}.${sign(p)}`;};
+const cookie=(req,v,age)=>`pd_session=${v}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}${process.env.VERCEL||req.headers['x-forwarded-proto']==='https'?'; Secure':''}`;
+function getCookie(req){for(const p of (req.headers.cookie||'').split(';')){const i=p.indexOf('=');if(i>0&&p.slice(0,i).trim()==='pd_session')return decodeURIComponent(p.slice(i+1).trim());}return '';}
+function verify(t){try{const [p,s]=t.split('.');const a=Buffer.from(sign(p)),b=Buffer.from(s);if(a.length!==b.length||!timingSafeEqual(a,b))return null;const d=JSON.parse(Buffer.from(p,'base64url').toString());return d.exp>Date.now()?d:null;}catch{return null;}}
+async function hash(p,salt=randomBytes(16).toString('hex')){return {salt,hash:Buffer.from(await scrypt(p,salt,64)).toString('hex')};}
+async function check(p,s,h){try{const a=Buffer.from(await scrypt(p,s,64)),b=Buffer.from(h,'hex');return a.length===b.length&&timingSafeEqual(a,b);}catch{return false;}}
+const bodyOf=req=>typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});
+async function currentUser(sql,req){const t=verify(getCookie(req));if(!t)return null;const [u]=await sql`SELECT id,username,full_name,role,is_active FROM personnel_desk.users WHERE id=${t.uid}::uuid`;return u?.is_active?u:null;}
+function need(u,...roles){if(!u)throw Object.assign(new Error('Silakan masuk kembali.'),{status:401});if(!roles.includes(u.role))throw Object.assign(new Error('Akses tidak diizinkan.'),{status:403});}
+async function bootstrap(sql){const [r]=await sql`SELECT count(*)::int n FROM personnel_desk.users WHERE role='admin' AND is_active=true`;if(Number(r.n))return;const username=clean(process.env.ADMIN_USERNAME||'admin').toLowerCase();const password=String(process.env.ADMIN_PASSWORD||process.env.APP_PASSWORD||'');if(password.length<12)throw new Error('Akun awal Admin belum ada. Atur ADMIN_PASSWORD minimal 12 karakter atau APP_PASSWORD.');const h=await hash(password);await sql`INSERT INTO personnel_desk.users(username,full_name,role,password_salt,password_hash,is_active) VALUES(${username},'Administrator','admin',${h.salt},${h.hash},true) ON CONFLICT(username) DO NOTHING`;}
+const validDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||''));
+const dateText=v=>{if(!v)return '';const d=new Date(`${String(v).slice(0,10)}T00:00:00+07:00`);return Number.isNaN(+d)?String(v):new Intl.DateTimeFormat('id-ID',{day:'2-digit',month:'long',year:'numeric',timeZone:'Asia/Jakarta'}).format(d);};
 export default async function handler(req,res){
-  res.setHeader('Cache-Control','private, no-store, max-age=0');
-  res.setHeader('X-Content-Type-Options','nosniff');
-  const url=new URL(req.url,`https://${req.headers.host||'localhost'}`);
-  const action=url.searchParams.get('action')||'';
-  if(!['GET','POST'].includes(req.method))return json(res,405,{error:'Metode tidak diizinkan.'});
-  if(req.method==='POST'&&!sameOrigin(req))return json(res,403,{error:'Permintaan lintas situs ditolak.'});
-  let sql;
-  try{sql=sqlClient();}catch(e){return json(res,503,{error:e.message});}
-  try{
-    if(req.method==='POST'){
-      const body=parseBody(req);
-      if(action==='login'){
-        await bootstrapAdmin(sql);
-        const username=clean(body.username).toLowerCase(),password=String(body.password||'');
-        if(!username||!password)return json(res,400,{error:'Username dan password wajib diisi.'});
-        const ip=clean(req.headers['x-forwarded-for']||req.socket?.remoteAddress||'unknown').split(',')[0].trim();
-        const attemptKey=createHash('sha256').update(ip+'|'+username).digest('hex');
-        const [limit]=await sql`SELECT blocked_until FROM personnel_desk.auth_attempts WHERE attempt_key=${attemptKey}`;
-        if(limit?.blocked_until&&new Date(limit.blocked_until)>new Date())return json(res,429,{error:'Terlalu banyak percobaan login. Coba lagi setelah 15 menit.'});
-        const [u]=await sql`SELECT id,username,full_name,role,employee_nik,password_salt,password_hash,is_active FROM personnel_desk.users WHERE username=${username}`;
-        if(!u||!u.is_active||!(await checkPassword(password,u.password_salt,u.password_hash))){
-          await sql`INSERT INTO personnel_desk.auth_attempts(attempt_key,fail_count,window_started_at,blocked_until) VALUES(${attemptKey},1,now(),NULL) ON CONFLICT(attempt_key) DO UPDATE SET fail_count=CASE WHEN personnel_desk.auth_attempts.window_started_at<now()-interval '15 minutes' THEN 1 ELSE personnel_desk.auth_attempts.fail_count+1 END,window_started_at=CASE WHEN personnel_desk.auth_attempts.window_started_at<now()-interval '15 minutes' THEN now() ELSE personnel_desk.auth_attempts.window_started_at END,blocked_until=CASE WHEN (CASE WHEN personnel_desk.auth_attempts.window_started_at<now()-interval '15 minutes' THEN 1 ELSE personnel_desk.auth_attempts.fail_count+1 END)>=8 THEN now()+interval '15 minutes' ELSE NULL END`;
-          return json(res,401,{error:'Username atau password salah.'});
-        }
-        await sql`DELETE FROM personnel_desk.auth_attempts WHERE attempt_key=${attemptKey}`;
-        const token=makeToken(u);res.setHeader('Set-Cookie',cookieHeader(req,token,12*60*60));
-        return json(res,200,{user:{id:u.id,username:u.username,full_name:u.full_name,role:u.role,employee_nik:u.employee_nik}});
-      }
-      if(action==='logout'){res.setHeader('Set-Cookie',cookieHeader(req,'',0));return json(res,200,{ok:true});}
-      const user=await sessionUser(sql,req);
-      if(action==='profile-save'){
-        requireRole(user,'admin','hrd','manager','employee');const fullName=clean(body.full_name);if(!fullName||fullName.length>180)return json(res,400,{error:'Nama profil wajib diisi (maksimal 180 karakter).'});await sql`UPDATE personnel_desk.users SET full_name=${fullName},updated_at=now() WHERE id=${user.id}::uuid`;return json(res,200,{ok:true,full_name:fullName});
-      }
-      if(action==='change-password'){
-        requireRole(user,'admin','hrd','manager','employee');
-        const old=String(body.current_password||''),next=String(body.new_password||'');
-        if(next.length<12||next.length>200)return json(res,400,{error:'Password baru minimal 12 karakter.'});
-        const [record]=await sql`SELECT password_salt,password_hash FROM personnel_desk.users WHERE id=${user.id}::uuid`;
-        if(!await checkPassword(old,record.password_salt,record.password_hash))return json(res,400,{error:'Password saat ini tidak sesuai.'});
-        const h=await hashPassword(next);await sql`UPDATE personnel_desk.users SET password_salt=${h.salt},password_hash=${h.hash},updated_at=now() WHERE id=${user.id}::uuid`;
-        return json(res,200,{ok:true,message:'Password berhasil diubah.'});
-      }
-      if(action==='submit-request'){
-        requireRole(user,'employee');
-        const [enabled]=await sql`SELECT value FROM personnel_desk.settings WHERE key='public_form_enabled'`;
-        if(enabled?.value===false)return json(res,403,{error:'Pengajuan melalui QR sedang ditutup oleh Admin.'});
-        if(!user.employee_nik)return json(res,400,{error:'Akun karyawan belum terhubung ke master karyawan. Hubungi Admin.'});
-        const input=validateRequestInput(body);
-        const [emp]=await sql`SELECT data FROM personnel_desk.employees WHERE nik=${user.employee_nik}`;
-        if(!emp||emp.data.active===false)return json(res,403,{error:'Data karyawan tidak ditemukan atau sudah nonaktif.'});
-        const e=emp.data;
-        const [hrdCount]=await sql`SELECT count(*)::int AS n FROM personnel_desk.users u LEFT JOIN personnel_desk.employees pe ON pe.nik=u.employee_nik WHERE u.role='hrd' AND u.is_active=true AND (u.employee_nik IS NULL OR pe.data->>'division'=${clean(e.division)})`;
-        const [managerCount]=await sql`SELECT count(*)::int AS n FROM personnel_desk.users u LEFT JOIN personnel_desk.employees pe ON pe.nik=u.employee_nik WHERE u.role='manager' AND u.is_active=true AND (u.employee_nik IS NULL OR pe.data->>'division'=${clean(e.division)})`;
-        if(Number(hrdCount.n)===0)return json(res,409,{error:'Belum ada akun HRD aktif. Hubungi Admin sebelum mengajukan izin.'});
-        if(Number(managerCount.n)===0)return json(res,409,{error:'Belum ada akun Manajer aktif. Hubungi Admin sebelum mengajukan izin.'});
-        const [created]=await sql`
-          WITH ins AS (
-            INSERT INTO personnel_desk.exit_requests(employee_nik,employee_name,position,division,request_date,exit_at,return_time,reason,whatsapp,status)
-            VALUES(${user.employee_nik},${clean(e.name)},${clean(e.position)},${clean(e.division)},${input.requestDate}::date,now(),${input.returnTime}::time,${input.reason},${input.whatsapp},'menunggu_hrd') RETURNING *
-          ), ev AS (
-            INSERT INTO personnel_desk.workflow_events(request_id,actor_user_id,actor_name,actor_role,action,from_status,to_status,note)
-            SELECT id,${user.id}::uuid,${user.full_name},'employee','submit',NULL,'menunggu_hrd','Pengajuan awal melalui formulir QR' FROM ins RETURNING id
-          ), employee_notice AS (
-            INSERT INTO personnel_desk.notifications(user_id,request_id,title,message,notification_type)
-            SELECT ${user.id}::uuid,id,'Pengajuan terkirim','Pengajuan izin keluar Anda berhasil dikirim dan sedang menunggu verifikasi HRD.','success' FROM ins RETURNING id
-          ), recipients AS (
-            SELECT u.id FROM personnel_desk.users u LEFT JOIN personnel_desk.employees pe ON pe.nik=u.employee_nik WHERE u.role='hrd' AND u.is_active=true AND (u.employee_nik IS NULL OR pe.data->>'division'=(SELECT division FROM ins LIMIT 1))
-            UNION ALL SELECT id FROM personnel_desk.users WHERE role='admin' AND is_active=true
-              AND NOT EXISTS(SELECT 1 FROM personnel_desk.users u LEFT JOIN personnel_desk.employees pe ON pe.nik=u.employee_nik WHERE u.role='hrd' AND u.is_active=true AND (u.employee_nik IS NULL OR pe.data->>'division'=(SELECT division FROM ins LIMIT 1)))
-          ), hrd_notice AS (
-            INSERT INTO personnel_desk.notifications(user_id,request_id,title,message,notification_type)
-            SELECT recipients.id,ins.id,'Pengajuan baru menunggu HRD',ins.employee_name||' mengajukan izin keluar. Silakan lakukan verifikasi tahap 1.','info' FROM ins CROSS JOIN recipients RETURNING id
-          ) SELECT id,employee_nik,employee_name,position,division,request_date,exit_at,return_time,reason,whatsapp,status,revision_no,created_at FROM ins`;
-        return json(res,201,{request:created});
-      }
-      if(action==='resubmit-request'){
-        requireRole(user,'employee');const [enabled]=await sql`SELECT value FROM personnel_desk.settings WHERE key='public_form_enabled'`;if(enabled?.value===false)return json(res,403,{error:'Formulir pengajuan sedang ditutup oleh Admin.'});const input=validateRequestInput(body);const [emp]=await sql`SELECT data FROM personnel_desk.employees WHERE nik=${user.employee_nik}`;if(!emp||emp.data.active===false)return json(res,400,{error:'Data karyawan tidak ditemukan atau sudah nonaktif.'});const [hrdCount]=await sql`SELECT count(*)::int AS n FROM personnel_desk.users u LEFT JOIN personnel_desk.employees pe ON pe.nik=u.employee_nik WHERE u.role='hrd' AND u.is_active=true AND (u.employee_nik IS NULL OR pe.data->>'division'=${clean(emp.data.division)})`;if(Number(hrdCount.n)===0)return json(res,409,{error:'Belum ada akun HRD aktif untuk divisi Anda.'});
-        const [updated]=await sql`
-          WITH upd AS (
-            UPDATE personnel_desk.exit_requests SET employee_name=${clean(emp.data.name)},position=${clean(emp.data.position)},division=${clean(emp.data.division)},request_date=${input.requestDate}::date,exit_at=now(),return_time=${input.returnTime}::time,reason=${input.reason},whatsapp=${input.whatsapp},status='menunggu_hrd',revision_no=revision_no+1,rejection_stage=NULL,hrd_user_id=NULL,hrd_name='',hrd_reviewed_at=NULL,hrd_note='',manager_user_id=NULL,manager_name='',manager_reviewed_at=NULL,manager_note='',updated_at=now()
-            WHERE id=${clean(body.id)}::uuid AND employee_nik=${user.employee_nik} AND status='ditolak' RETURNING *
-          ), ev AS (
-            INSERT INTO personnel_desk.workflow_events(request_id,actor_user_id,actor_name,actor_role,action,from_status,to_status,note)
-            SELECT id,${user.id}::uuid,${user.full_name},'employee','resubmit','ditolak','menunggu_hrd','Karyawan memperbaiki dan mengirim ulang pengajuan' FROM upd RETURNING id
-          ), employee_notice AS (
-            INSERT INTO personnel_desk.notifications(user_id,request_id,title,message,notification_type)
-            SELECT ${user.id}::uuid,id,'Pengajuan dikirim ulang','Perbaikan pengajuan berhasil dikirim dan menunggu pemeriksaan HRD.','success' FROM upd RETURNING id
-          ), recipients AS (
-            SELECT u.id FROM personnel_desk.users u LEFT JOIN personnel_desk.employees pe ON pe.nik=u.employee_nik WHERE u.role='hrd' AND u.is_active=true AND (u.employee_nik IS NULL OR pe.data->>'division'=(SELECT division FROM upd LIMIT 1))
-            UNION ALL SELECT id FROM personnel_desk.users WHERE role='admin' AND is_active=true AND NOT EXISTS(SELECT 1 FROM personnel_desk.users u LEFT JOIN personnel_desk.employees pe ON pe.nik=u.employee_nik WHERE u.role='hrd' AND u.is_active=true AND (u.employee_nik IS NULL OR pe.data->>'division'=(SELECT division FROM upd LIMIT 1)))
-          ), hrd_notice AS (
-            INSERT INTO personnel_desk.notifications(user_id,request_id,title,message,notification_type)
-            SELECT recipients.id,upd.id,'Pengajuan diperbaiki',upd.employee_name||' mengirim ulang pengajuan yang perlu diperbaiki.','info' FROM upd CROSS JOIN recipients RETURNING id
-          ) SELECT * FROM upd`;
-        if(!updated)return json(res,409,{error:'Pengajuan tidak ditemukan atau statusnya bukan ditolak.'});return json(res,200,{request:updated});
-      }
-      if(action==='review-request'){
-        requireRole(user,'hrd','manager');const id=clean(body.id),decision=clean(body.decision),note=clean(body.note);if(!/^[0-9a-f-]{36}$/i.test(id))return json(res,400,{error:'ID pengajuan tidak valid.'});if(user.employee_nik){const [actorEmployee]=await sql`SELECT data FROM personnel_desk.employees WHERE nik=${user.employee_nik}`;const [targetRequest]=await sql`SELECT division FROM personnel_desk.exit_requests WHERE id=${id}::uuid`;if(!targetRequest)return json(res,404,{error:'Pengajuan tidak ditemukan.'});if(clean(actorEmployee?.data?.division)!==clean(targetRequest.division))return json(res,403,{error:'Anda hanya dapat memverifikasi pengajuan dari divisi yang ditugaskan.'});}if(!['approve','reject'].includes(decision))return json(res,400,{error:'Keputusan verifikasi tidak valid.'});if(decision==='reject'&&!note)return json(res,400,{error:'Alasan penolakan wajib diisi.'});
-        if(user.role==='hrd'&&decision==='approve'){const [reqRow]=await sql`SELECT division FROM personnel_desk.exit_requests WHERE id=${id}::uuid AND status='menunggu_hrd'`;const [m]=await sql`SELECT count(*)::int AS n FROM personnel_desk.users u LEFT JOIN personnel_desk.employees pe ON pe.nik=u.employee_nik WHERE u.role='manager' AND u.is_active=true AND (u.employee_nik IS NULL OR pe.data->>'division'=${reqRow?.division||''})`;if(Number(m.n)===0)return json(res,409,{error:'Belum ada akun Manajer aktif. Hubungi Admin.'});}
-        const expected=user.role==='hrd'?'menunggu_hrd':'menunggu_manager';const next=user.role==='hrd'?(decision==='approve'?'menunggu_manager':'ditolak'):(decision==='approve'?'disetujui':'ditolak');const stage=decision==='reject'?user.role:null;
-        const [updated]=await sql`
-          WITH upd AS (
-            UPDATE personnel_desk.exit_requests SET status=${next},rejection_stage=${stage},
-              hrd_user_id=CASE WHEN ${user.role}='hrd' THEN ${user.id}::uuid ELSE hrd_user_id END,
-              hrd_name=CASE WHEN ${user.role}='hrd' THEN ${user.full_name} ELSE hrd_name END,
-              hrd_reviewed_at=CASE WHEN ${user.role}='hrd' THEN now() ELSE hrd_reviewed_at END,
-              hrd_note=CASE WHEN ${user.role}='hrd' THEN ${note} ELSE hrd_note END,
-              manager_user_id=CASE WHEN ${user.role}='manager' THEN ${user.id}::uuid ELSE manager_user_id END,
-              manager_name=CASE WHEN ${user.role}='manager' THEN ${user.full_name} ELSE manager_name END,
-              manager_reviewed_at=CASE WHEN ${user.role}='manager' THEN now() ELSE manager_reviewed_at END,
-              manager_note=CASE WHEN ${user.role}='manager' THEN ${note} ELSE manager_note END,
-              updated_at=now()
-            WHERE id=${id}::uuid AND status=${expected} RETURNING *
-          ), ev AS (
-            INSERT INTO personnel_desk.workflow_events(request_id,actor_user_id,actor_name,actor_role,action,from_status,to_status,note)
-            SELECT id,${user.id}::uuid,${user.full_name},${user.role},${decision},${expected},${next},${note} FROM upd RETURNING id
-          ), employee_notice AS (
-            INSERT INTO personnel_desk.notifications(user_id,request_id,title,message,notification_type)
-            SELECT u.id,upd.id,
-              CASE WHEN ${next}='menunggu_manager' THEN 'Lolos verifikasi HRD' WHEN ${next}='disetujui' THEN 'Izin disetujui' ELSE 'Pengajuan perlu diperbaiki' END,
-              CASE WHEN ${next}='menunggu_manager' THEN 'Pengajuan Anda lolos verifikasi HRD dan diteruskan ke Manajer.' WHEN ${next}='disetujui' THEN 'Pengajuan izin keluar Anda telah disetujui Manajer. Surat PDF sudah tersedia.' ELSE 'Pengajuan ditolak pada tahap '||${user.role}||'. Alasan: '||${note} END,
-              CASE WHEN ${next}='disetujui' THEN 'success' WHEN ${next}='ditolak' THEN 'warning' ELSE 'info' END
-            FROM upd JOIN personnel_desk.users u ON u.role='employee' AND u.employee_nik=upd.employee_nik AND u.is_active=true RETURNING id
-          ), manager_notice AS (
-            INSERT INTO personnel_desk.notifications(user_id,request_id,title,message,notification_type)
-            SELECT u.id,upd.id,'Pengajuan menunggu Manajer',upd.employee_name||' lolos verifikasi HRD dan menunggu keputusan Anda.','info'
-            FROM upd JOIN personnel_desk.users u ON u.role='manager' AND u.is_active=true LEFT JOIN personnel_desk.employees pe ON pe.nik=u.employee_nik WHERE ${next}='menunggu_manager' AND (u.employee_nik IS NULL OR pe.data->>'division'=upd.division) RETURNING id
-          ) SELECT * FROM upd`;
-        if(!updated)return json(res,409,{error:'Pengajuan tidak ditemukan, sudah diproses, atau bukan antrean verifikasi Anda.'});return json(res,200,{request:updated});
-      }
-      if(action==='mark-notifications'){
-        requireRole(user,'admin','hrd','manager','employee');if(body.all===true)await sql`UPDATE personnel_desk.notifications SET read_at=now() WHERE user_id=${user.id}::uuid AND read_at IS NULL`;else if(body.id)await sql`UPDATE personnel_desk.notifications SET read_at=now() WHERE id=${Number(body.id)} AND user_id=${user.id}::uuid`;return json(res,200,{ok:true});
-      }
-      if(action==='user-save'){
-        requireRole(user,'admin');const id=clean(body.id),username=clean(body.username).toLowerCase(),fullName=clean(body.full_name),role=clean(body.role),employeeNik=clean(body.employee_nik)||null,password=String(body.password||'');if(!/^[a-z0-9._-]{3,80}$/.test(username))return json(res,400,{error:'Username 3–80 karakter: huruf kecil, angka, titik, garis bawah atau strip.'});if(!fullName||fullName.length>180||!ROLES.has(role))return json(res,400,{error:'Nama atau peran tidak valid.'});if(role==='employee'&&!employeeNik)return json(res,400,{error:'Akun Karyawan wajib dihubungkan ke master karyawan.'});if(employeeNik){const [e]=await sql`SELECT nik,data FROM personnel_desk.employees WHERE nik=${employeeNik}`;if(!e)return json(res,400,{error:'NIK karyawan tidak ditemukan di master.'});if(e.data.active===false)return json(res,400,{error:'Akun tidak dapat dihubungkan ke karyawan nonaktif.'});}
-        if(!id&&!password)return json(res,400,{error:'Password awal wajib diisi untuk akun baru.'});if(password&&password.length<12)return json(res,400,{error:'Password minimal 12 karakter.'});if(id===user.id&&(!body.is_active||role!=='admin'))return json(res,400,{error:'Akun Admin yang sedang digunakan tidak boleh dinonaktifkan atau diturunkan perannya.'});if(id){const [target]=await sql`SELECT role,is_active FROM personnel_desk.users WHERE id=${id}::uuid`;if(target?.role==='admin'&&target.is_active&&(role!=='admin'||body.is_active===false)){const [activeAdmins]=await sql`SELECT count(*)::int AS n FROM personnel_desk.users WHERE role='admin' AND is_active=true AND id<>${id}::uuid`;if(Number(activeAdmins.n)===0)return json(res,400,{error:'Harus ada minimal satu akun Admin aktif.'});}}
-        const h=password?await hashPassword(password):null;let row;
-        if(id){[row]=await sql`UPDATE personnel_desk.users SET username=${username},full_name=${fullName},role=${role},employee_nik=${employeeNik},is_active=${body.is_active!==false},password_salt=COALESCE(${h?.salt||null},password_salt),password_hash=COALESCE(${h?.hash||null},password_hash),updated_at=now() WHERE id=${id}::uuid RETURNING id,username,full_name,role,employee_nik,is_active`;}
-        else{[row]=await sql`INSERT INTO personnel_desk.users(username,full_name,role,employee_nik,password_salt,password_hash,is_active) VALUES(${username},${fullName},${role},${employeeNik},${h.salt},${h.hash},true) RETURNING id,username,full_name,role,employee_nik,is_active`;}
-        if(!row)return json(res,404,{error:'Akun tidak ditemukan.'});return json(res,200,{user:row});
-      }
-      if(action==='employee-save'){
-        requireRole(user,'admin');const e=body.employee||{};const payload={nik:clean(e.nik),name:clean(e.name),division:clean(e.division),position:clean(e.position),join:clean(e.join),phone:clean(e.phone),emergency:clean(e.emergency),active:e.active!==false};if(!payload.nik||!payload.name)return json(res,400,{error:'NIK dan nama karyawan wajib diisi.'});const [r]=await sql`SELECT personnel_desk.upsert_employee(${JSON.stringify(payload)}::jsonb) AS revision`;return json(res,200,{employee:payload,revision:r.revision});
-      }
-      if(action==='employee-import'){
-        requireRole(user,'admin');if(!Array.isArray(body.employees)||body.employees.length<1||body.employees.length>2000)return json(res,400,{error:'Pilih 1–2.000 data karyawan yang valid.'});const batch=body.employees.map(e=>({nik:clean(e.nik),name:clean(e.name),division:clean(e.division),position:clean(e.position),join:clean(e.join),phone:clean(e.phone),emergency:clean(e.emergency),active:e.active!==false}));if(batch.some(e=>!e.nik||!e.name||e.nik.length>120||e.name.length>200))return json(res,400,{error:'Setiap baris wajib memiliki NIK dan Nama; periksa panjang data.'});const [r]=await sql`SELECT personnel_desk.upsert_employees(${JSON.stringify(batch)}::jsonb) AS revision`;return json(res,200,{count:batch.length,revision:r.revision});
-      }
-      if(action==='settings-save'){
-        requireRole(user,'admin');const enabled=body.public_form_enabled===true;await sql`INSERT INTO personnel_desk.settings(key,value,updated_at) VALUES('public_form_enabled',${JSON.stringify(enabled)}::jsonb,now()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`;return json(res,200,{public_form_enabled:enabled});
-      }
-      return json(res,404,{error:'Aksi API tidak dikenal.'});
-    }
-
-    if(action==='qr'){
-      const user=await sessionUser(sql,req);requireRole(user,'admin');const protocol=req.headers['x-forwarded-proto']==='http'?'http':'https';const host=req.headers['x-forwarded-host']||req.headers.host;const target=`${protocol}://${host}/?scan=1`;const svg=await QRCode.toString(target,{type:'svg',width:260,margin:2,errorCorrectionLevel:'M'});res.setHeader('Content-Type','image/svg+xml; charset=utf-8');return res.status(200).send(svg);
-    }
-    if(action==='me'){
-      const user=await sessionUser(sql,req);if(!user)return json(res,401,{error:'Silakan masuk.'});return json(res,200,{user});
-    }
-    const user=await sessionUser(sql,req);requireRole(user,'admin','hrd','manager','employee');
-    if(action==='requests'){
-      let rows;if(user.role==='employee')rows=await sql`SELECT r.* FROM personnel_desk.exit_requests r WHERE r.employee_nik=${user.employee_nik} ORDER BY r.created_at DESC LIMIT 500`;
-      else if(user.role==='hrd')rows=await sql`SELECT r.* FROM personnel_desk.exit_requests r WHERE (r.status='menunggu_hrd' AND EXISTS(SELECT 1 FROM personnel_desk.users u LEFT JOIN personnel_desk.employees pe ON pe.nik=u.employee_nik WHERE u.id=${user.id}::uuid AND (u.employee_nik IS NULL OR pe.data->>'division'=r.division))) OR r.hrd_user_id=${user.id}::uuid ORDER BY r.created_at DESC LIMIT 1000`;
-      else if(user.role==='manager')rows=await sql`SELECT r.* FROM personnel_desk.exit_requests r WHERE (r.status='menunggu_manager' AND EXISTS(SELECT 1 FROM personnel_desk.users u LEFT JOIN personnel_desk.employees pe ON pe.nik=u.employee_nik WHERE u.id=${user.id}::uuid AND (u.employee_nik IS NULL OR pe.data->>'division'=r.division))) OR r.manager_user_id=${user.id}::uuid ORDER BY r.created_at DESC LIMIT 1000`;
-      else rows=await sql`SELECT r.* FROM personnel_desk.exit_requests r ORDER BY r.created_at DESC LIMIT 5000`;
-      return json(res,200,{requests:rows});
-    }
-    if(action==='notifications'){
-      const rows=await sql`SELECT id,request_id,title,message,notification_type,read_at,created_at FROM personnel_desk.notifications WHERE user_id=${user.id}::uuid ORDER BY created_at DESC LIMIT 100`;const [count]=await sql`SELECT count(*)::int AS unread FROM personnel_desk.notifications WHERE user_id=${user.id}::uuid AND read_at IS NULL`;return json(res,200,{notifications:rows,unread:Number(count.unread)});
-    }
-    if(action==='legacy-leaves'){
-      requireRole(user,'admin');const rows=await sql`SELECT data FROM personnel_desk.leaves ORDER BY updated_at DESC LIMIT 5000`;return json(res,200,{leaves:rows.map(r=>r.data)});
-    }
-    if(action==='users'){
-      requireRole(user,'admin');const rows=await sql`SELECT u.id,u.username,u.full_name,u.role,u.employee_nik,u.is_active,u.created_at,e.data->>'division' AS division FROM personnel_desk.users u LEFT JOIN personnel_desk.employees e ON e.nik=u.employee_nik ORDER BY u.role,u.full_name`;return json(res,200,{users:rows});
-    }
-    if(action==='employees'){
-      requireRole(user,'admin');const rows=await sql`SELECT nik,data FROM personnel_desk.employees ORDER BY data->>'name'`;return json(res,200,{employees:rows.map(r=>r.data)});
-    }
-    if(action==='settings'){
-      requireRole(user,'admin');const [r]=await sql`SELECT value FROM personnel_desk.settings WHERE key='public_form_enabled'`;return json(res,200,{public_form_enabled:r?.value!==false,public_url:`${req.headers['x-forwarded-proto']==='http'?'http':'https'}://${req.headers['x-forwarded-host']||req.headers.host}/?scan=1`});
-    }
-    if(action==='report'){
-      requireRole(user,'admin');const from=clean(url.searchParams.get('from')),to=clean(url.searchParams.get('to')),status=clean(url.searchParams.get('status'));let rows=await sql`SELECT r.* FROM personnel_desk.exit_requests r ORDER BY r.created_at DESC LIMIT 10000`;if(from&&validDate(from))rows=rows.filter(r=>String(r.request_date).slice(0,10)>=from);if(to&&validDate(to))rows=rows.filter(r=>String(r.request_date).slice(0,10)<=to);if(status&&STATUS.has(status))rows=rows.filter(r=>r.status===status);return json(res,200,{requests:rows});
-    }
-    if(action==='events'){
-      const id=clean(url.searchParams.get('id'));if(!/^[0-9a-f-]{36}$/i.test(id))return json(res,400,{error:'ID pengajuan tidak valid.'});const [r]=await sql`SELECT employee_nik,division FROM personnel_desk.exit_requests WHERE id=${id}::uuid`;if(!r)return json(res,404,{error:'Pengajuan tidak ditemukan.'});if(user.role==='employee'&&r.employee_nik!==user.employee_nik)return json(res,403,{error:'Tidak diizinkan.'});if((user.role==='hrd'||user.role==='manager')&&user.employee_nik){const [actorEmployee]=await sql`SELECT data FROM personnel_desk.employees WHERE nik=${user.employee_nik}`;if(clean(actorEmployee?.data?.division)!==clean(r.division))return json(res,403,{error:'Tidak diizinkan untuk divisi ini.'});}const rows=await sql`SELECT actor_name,actor_role,action,from_status,to_status,note,created_at FROM personnel_desk.workflow_events WHERE request_id=${id}::uuid ORDER BY created_at ASC`;return json(res,200,{events:rows});
-    }
-    return json(res,404,{error:'Aksi API tidak dikenal.'});
-  }catch(e){const status=e.status||500;if(status>=500)console.error('Personnel Desk V3 API:',e.code||e.name||e.message);return json(res,status,{error:status===500?'Terjadi kesalahan server. Periksa konfigurasi dan schema Neon.':e.message});}
+ res.setHeader('Cache-Control','no-store');
+ if(!['GET','POST'].includes(req.method))return json(res,405,{error:'Metode tidak diizinkan.'});
+ const sql=sqlClient();const url=new URL(req.url,`https://${req.headers.host||'localhost'}`);const action=url.searchParams.get('action')||'';
+ try{
+  if(req.method==='POST'){
+   const b=bodyOf(req);
+   if(action==='login'){await bootstrap(sql);const username=clean(b.username).toLowerCase(),password=String(b.password||'');const [u]=await sql`SELECT id,username,full_name,role,password_salt,password_hash,is_active FROM personnel_desk.users WHERE username=${username}`;if(!u||!u.is_active||!ROLES.has(u.role)||!await check(password,u.password_salt,u.password_hash))return json(res,401,{error:'Username atau password salah.'});res.setHeader('Set-Cookie',cookie(req,tokenFor(u),43200));return json(res,200,{user:{id:u.id,username:u.username,full_name:u.full_name,role:u.role}});}
+   if(action==='logout'){res.setHeader('Set-Cookie',cookie(req,'',0));return json(res,200,{ok:true});}
+   const u=await currentUser(sql,req);
+   if(action==='profile-save'){need(u,'admin','executive');const n=clean(b.full_name);if(!n)return json(res,400,{error:'Nama wajib diisi.'});await sql`UPDATE personnel_desk.users SET full_name=${n},updated_at=now() WHERE id=${u.id}::uuid`;return json(res,200,{ok:true});}
+   if(action==='change-password'){need(u,'admin','executive');const [r]=await sql`SELECT password_salt,password_hash FROM personnel_desk.users WHERE id=${u.id}::uuid`;if(!await check(String(b.current_password||''),r.password_salt,r.password_hash))return json(res,400,{error:'Password saat ini salah.'});const p=String(b.new_password||'');if(p.length<12)return json(res,400,{error:'Password baru minimal 12 karakter.'});const h=await hash(p);await sql`UPDATE personnel_desk.users SET password_salt=${h.salt},password_hash=${h.hash},updated_at=now() WHERE id=${u.id}::uuid`;return json(res,200,{ok:true});}
+   if(action==='executive-save'){need(u,'admin');const id=clean(b.id),username=clean(b.username).toLowerCase(),name=clean(b.full_name),pass=String(b.password||'');if(!/^[a-z0-9._-]{3,80}$/.test(username)||!name)return json(res,400,{error:'Username atau nama tidak valid.'});if(!id&&pass.length<12)return json(res,400,{error:'Password awal minimal 12 karakter.'});if(pass&&pass.length<12)return json(res,400,{error:'Password minimal 12 karakter.'});const h=pass?await hash(pass):null;let r;if(id){[r]=await sql`UPDATE personnel_desk.users SET username=${username},full_name=${name},role='executive',is_active=${b.is_active!==false},password_salt=COALESCE(${h?.salt||null},password_salt),password_hash=COALESCE(${h?.hash||null},password_hash),updated_at=now() WHERE id=${id}::uuid AND role='executive' RETURNING id,username,full_name,role,is_active`;}else{[r]=await sql`INSERT INTO personnel_desk.users(username,full_name,role,password_salt,password_hash,is_active) VALUES(${username},${name},'executive',${h.salt},${h.hash},true) RETURNING id,username,full_name,role,is_active`;}if(!r)return json(res,404,{error:'Akun tidak ditemukan.'});return json(res,200,{user:r});}
+   if(action==='employee-save'){need(u,'admin');const e=b.employee||{};const p={nik:clean(e.nik),name:clean(e.name),division:clean(e.division),position:clean(e.position),join:clean(e.join),phone:clean(e.phone),emergency:clean(e.emergency),active:e.active!==false};if(!p.nik||!p.name)return json(res,400,{error:'NIK dan nama wajib diisi.'});await sql`SELECT personnel_desk.upsert_employee(${JSON.stringify(p)}::jsonb)`;return json(res,200,{employee:p});}
+   if(action==='employee-import'){need(u,'admin');if(!Array.isArray(b.employees)||!b.employees.length||b.employees.length>2000)return json(res,400,{error:'Data impor tidak valid.'});const a=b.employees.map(e=>({nik:clean(e.nik),name:clean(e.name),division:clean(e.division),position:clean(e.position),join:clean(e.join),phone:clean(e.phone),emergency:clean(e.emergency),active:e.active!==false}));if(a.some(e=>!e.nik||!e.name))return json(res,400,{error:'NIK dan nama wajib pada setiap baris.'});await sql`SELECT personnel_desk.upsert_employees(${JSON.stringify(a)}::jsonb)`;return json(res,200,{count:a.length});}
+   if(action==='form-save'){need(u,'admin');const f=b.form||{};const nik=clean(f.employee_nik);const [emp]=await sql`SELECT nik,data FROM personnel_desk.employees WHERE nik=${nik}`;if(!emp)return json(res,400,{error:'Pilih karyawan dari master data.'});const data={...f,employee_nik:nik,employee_name:clean(emp.data.name),division:clean(emp.data.division),position:clean(emp.data.position),join:clean(emp.data.join),phone:clean(emp.data.phone),created_by:u.id,created_by_name:u.full_name};if(!validDate(data.application_date)||!validDate(data.leave_start)||!validDate(data.leave_end)||data.leave_end<data.leave_start)return json(res,400,{error:'Periksa tanggal pengajuan dan tanggal izin.'});if(!data.purpose)return json(res,400,{error:'Keperluan wajib diisi.'});const [r]=await sql`INSERT INTO personnel_desk.absence_forms(employee_nik,data,created_by) VALUES(${nik},${JSON.stringify(data)}::jsonb,${u.id}::uuid) RETURNING id,employee_nik,data,is_signed,created_at`;return json(res,201,{form:r});}
+   if(action==='form-sign'){need(u,'admin');const id=clean(b.id);const [r]=await sql`UPDATE personnel_desk.absence_forms SET is_signed=${b.is_signed===true},signed_at=CASE WHEN ${b.is_signed===true} THEN now() ELSE NULL END,signed_by=CASE WHEN ${b.is_signed===true} THEN ${u.id}::uuid ELSE NULL END,signed_by_name=CASE WHEN ${b.is_signed===true} THEN ${u.full_name} ELSE '' END,updated_at=now() WHERE id=${id}::uuid RETURNING id,is_signed,signed_at,signed_by_name`;if(!r)return json(res,404,{error:'Form tidak ditemukan.'});return json(res,200,{form:r});}
+   if(action==='form-delete'){need(u,'admin');await sql`DELETE FROM personnel_desk.absence_forms WHERE id=${clean(b.id)}::uuid`;return json(res,200,{ok:true});}
+   return json(res,404,{error:'Aksi tidak dikenal.'});
+  }
+  if(action==='me'){const u=await currentUser(sql,req);if(!u)return json(res,401,{error:'Silakan masuk.'});return json(res,200,{user:u});}
+  const u=await currentUser(sql,req);need(u,'admin','executive');
+  if(action==='employees'){const rows=await sql`SELECT nik,data FROM personnel_desk.employees ORDER BY data->>'name'`;return json(res,200,{employees:rows.map(x=>x.data)});}
+  if(action==='forms'){const rows=await sql`SELECT id,employee_nik,data,is_signed,signed_at,signed_by_name,created_at,updated_at FROM personnel_desk.absence_forms ORDER BY created_at DESC LIMIT 5000`;return json(res,200,{forms:rows});}
+  if(action==='users'){need(u,'admin');const rows=await sql`SELECT id,username,full_name,role,is_active,created_at FROM personnel_desk.users WHERE role='executive' ORDER BY full_name`;return json(res,200,{users:rows});}
+  if(action==='report'){const rows=await sql`SELECT id,employee_nik,data,is_signed,signed_at,signed_by_name,created_at FROM personnel_desk.absence_forms ORDER BY created_at DESC LIMIT 10000`;return json(res,200,{forms:rows});}
+  if(action==='report-xlsx'){
+    const rows=await sql`SELECT id,data,is_signed,signed_at,signed_by_name,created_at FROM personnel_desk.absence_forms ORDER BY created_at DESC LIMIT 10000`;
+    const wb=new ExcelJS.Workbook();const ws=wb.addWorksheet('Laporan Izin');
+    ws.columns=[{header:'Tanggal Pengajuan',key:'application_date',width:18},{header:'Nama Karyawan',key:'employee_name',width:28},{header:'NIK / No. Absen',key:'employee_nik',width:18},{header:'Jabatan',key:'position',width:20},{header:'Divisi',key:'division',width:20},{header:'Tanggal Mulai',key:'leave_start',width:16},{header:'Tanggal Selesai',key:'leave_end',width:16},{header:'Keperluan',key:'purpose',width:36},{header:'Pengganti',key:'replacement_name',width:24},{header:'Status Tanda Tangan',key:'signed',width:22},{header:'Ditandai Oleh',key:'signed_by',width:24},{header:'Tanggal Dibuat',key:'created_at',width:22}];
+    ws.getRow(1).font={bold:true,color:{argb:'FFFFFFFF'}};ws.getRow(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF146B61'}};ws.views=[{state:'frozen',ySplit:1}];ws.autoFilter='A1:L1';
+    for(const r of rows){const d=r.data||{};ws.addRow({application_date:d.application_date||'',employee_name:d.employee_name||'',employee_nik:d.employee_nik||'',position:d.position||'',division:d.division||'',leave_start:d.leave_start||'',leave_end:d.leave_end||'',purpose:d.purpose||'',replacement_name:d.replacement_name||'',signed:r.is_signed?'Sudah ditandatangani':'Belum ditandatangani',signed_by:r.signed_by_name||'',created_at:r.created_at||''});}
+    ws.eachRow(row=>row.eachCell(cell=>{cell.border={bottom:{style:'hair',color:{argb:'FFDCE4ED'}}};cell.alignment={vertical:'middle',wrapText:true};}));
+    const buf=await wb.xlsx.writeBuffer();res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');res.setHeader('Content-Disposition','attachment; filename="Laporan-Form-Izin.xlsx"');return res.status(200).send(Buffer.from(buf));
+  }
+  if(action==='form-xlsx'){const id=clean(url.searchParams.get('id'));const [r]=await sql`SELECT id,data FROM personnel_desk.absence_forms WHERE id=${id}::uuid`;if(!r)return json(res,404,{error:'Form tidak ditemukan.'});const wb=new ExcelJS.Workbook();await wb.xlsx.readFile(path.join(process.cwd(),'public','template-form.xlsx'));const ws=wb.getWorksheet('Karyawan');const d=r.data||{};const values={G29:dateText(d.application_date),G30:d.employee_name,G31:d.employee_nik,G32:dateText(d.join),G33:d.division,G34:d.phone,G35:d.other_phone,G36:`${dateText(d.leave_start)} s/d ${dateText(d.leave_end)}`,G37:d.purpose,G39:d.replacement_name,G40:d.approved_date?dateText(d.approved_date):'',B48:d.hrd_name||'',D48:d.manager_name||'',F48:d.supervisor_name||'',H48:d.replacement_name||'',J48:d.employee_name||''};for(const [cell,value] of Object.entries(values))ws.getCell(cell).value=value||'';ws.pageSetup.printArea='B26:K48';ws.pageSetup.fitToPage=true;ws.pageSetup.fitToWidth=1;ws.pageSetup.fitToHeight=1;ws.pageSetup.orientation='portrait';ws.pageSetup.paperSize=9;const buf=await wb.xlsx.writeBuffer();res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');res.setHeader('Content-Disposition',`attachment; filename="Surat-Izin-${String(d.employee_name||'Karyawan').replace(/[^a-z0-9_-]/gi,'-')}.xlsx"`);return res.status(200).send(Buffer.from(buf));}
+  return json(res,404,{error:'Aksi tidak dikenal.'});
+ }catch(e){console.error(e);return json(res,e.status||500,{error:e.message||'Terjadi kesalahan server.'});}
 }

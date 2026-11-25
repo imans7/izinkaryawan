@@ -1,12 +1,17 @@
 {
-  "name": "personnel-desk-v3",
-  "version": "3.0.0",
+  "name": "personnel-desk-v4",
+  "version": "4.0.0",
   "private": true,
   "type": "module",
-  "engines": {"node": "22.x"},
-  "scripts": {"dev": "vercel dev", "build": "node -e \"console.log('Personnel Desk V3 static frontend ready')\""},
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "node -e \"console.log('Personnel Desk V4 ready')\""
+  },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
-    "qrcode": "^1.5.4"
+    "exceljs": "^4.4.0"
   }
 }
