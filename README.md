@@ -1,4 +1,4 @@
-# Izin Masuk IPK V4.0 — Form Surat Izin Tidak Masuk
+# Surat Izin IPK V4.0 — Form Surat Izin Tidak Masuk
 
 Versi ini merombak V3 menjadi sistem internal dengan **dua peran saja: Admin dan Eksekutif**. Tidak ada login karyawan, HRD, atau Manajer.
 
