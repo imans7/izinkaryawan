@@ -19,6 +19,7 @@ Versi ini merombak V3 menjadi sistem internal dengan **dua peran saja: Admin dan
 - **Backup Data** (Admin): unduh backup JSON, unduh salinan Excel, dan pulihkan dari JSON (menambah/menimpa data dengan NIK/ID yang sama, tidak menghapus).
 - **Unduhan form Excel** kini hanya berisi satu formulir (tanpa formulir lain, tanpa sheet kosong), kolom Keperluan hanya berisi keperluan. Surat izin dapat dihapus oleh Admin (tombol Hapus).
 - **Rekap form surat izin**: halaman Form Surat Izin punya filter tanggal (periode izin yang beririsan dengan rentang), tombol "Bulan ini", Reset, dan **Unduh Excel**. File berisi semua surat hasil filter (nama, status, kategori ikut terfilter), disusun dari atas ke bawah berurutan tanggal izin, satu formulir per halaman cetak (maks. 500 surat per unduhan).
+- **Penanda tangan dengan dropdown**: kolom Nama HRD, Manager, dan Supervisor pada form baru menampilkan daftar karyawan aktif yang jabatannya mengandung HRD / Manager / Supervisor (juga "manajer", "spv"), dan tetap bisa diketik manual untuk nama baru. Jika hanya ada satu kandidat, otomatis terisi.
 - Validasi `form-save` diperketat (hanya field yang dikenal yang disimpan). **Tidak ada migrasi SQL baru.**
 
 ## Struktur
