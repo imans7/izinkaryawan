@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vercel dev",
-    "build": "node -e \"console.log('Personnel Desk V4 ready')\""
+    "build": "node -e \"console.log('Izin Masuk IPK V4 ready')\""
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

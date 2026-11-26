@@ -1,4 +1,4 @@
--- Personnel Desk V4.0: dua peran (admin & executive), form izin offline-signature.
+-- Izin Masuk IPK V4.0: dua peran (admin & executive), form izin offline-signature.
 BEGIN;
 CREATE SCHEMA IF NOT EXISTS personnel_desk;
 DO $$

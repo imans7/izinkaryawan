@@ -1,5 +1,5 @@
--- Personnel Desk V3.0 - additive migration for Neon PostgreSQL
--- Run once in the SAME Neon branch/database used by Personnel Desk V2.3.
+-- Izin Masuk IPK V3.0 - additive migration for Neon PostgreSQL
+-- Run once in the SAME Neon branch/database used by Izin Masuk IPK V2.3.
 -- This script preserves existing employees, leaves, state, and all legacy records.
 BEGIN;
 CREATE SCHEMA IF NOT EXISTS personnel_desk;
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS personnel_desk.settings (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 INSERT INTO personnel_desk.settings(key,value)
-VALUES ('public_form_enabled','true'::jsonb),('company_name','"Personnel Desk"'::jsonb)
+VALUES ('public_form_enabled','true'::jsonb),('company_name','"Izin Masuk IPK"'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 
 -- Update a master employee without deleting legacy leave history; increments V2 snapshot revision.
