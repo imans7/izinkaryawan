@@ -25,6 +25,10 @@ Versi ini merombak V3 menjadi sistem internal dengan **dua peran saja: Admin dan
 - **Pencatatan mengikuti tanggal mulai izin**: kolom tanggal, urutan daftar/laporan, kalender, dan filter memakai tanggal mulai (bukan tanggal pengajuan).
 - **Kalender (revisi)**: titik indikator hanya muncul di *tanggal mulai* izin; filter karyawan/divisi berupa dropdown yang bisa dicari (data dari Data Karyawan), dengan opsi "Semua Karyawan / Divisi".
 - **Statistik dinamis**: kartu ringkasan di Laporan (Total Form, Sudah/Belum TTD, per kategori, Total Karyawan) dihitung ulang mengikuti filter karyawan/divisi, kategori, dan bulan kalender yang aktif.
+- **Template per jenis (V4.3)**: `public/template-hrd.xlsx` (3 formulir resmi HRD). Cuti → Sheet 1 *FM-020* (dengan tabel kuota), Izin Pulang Cepat → Sheet 2 *FM-017* (Security, MR/HRD, Leader, Karyawan + tanggal), Izin / Sakit → Sheet 3 *FM-030*. Berlaku untuk pratinjau, dialog TTD, dan semua unduhan Excel. Unduhan gabungan mengelompokkan per jenis (satu sheet per jenis); dari dialog TTD satu sheet per karyawan.
+- **Data Libur (Admin)**: kuota cuti tahunan & cuti bersama global per tahun, cuti khusus per karyawan (tambah/penyesuaian), tanggal merah (tambah/edit/hapus, jenis Libur Nasional/Cuti Bersama/Libur Perusahaan) yang tersinkron ke kalender Laporan, serta rekap sisa cuti. Hari kerja = tanpa Minggu & tanggal merah (Sabtu dapat diatur).
+- **Rumus kuota Cuti**: Cuti Tahunan = kuota global + cuti khusus; Sisa belum diambil = Tahunan − Bersama; Sudah diambil = hari kerja cuti sebelumnya pada tahun itu; Akan diambil = hari kerja pengajuan ini; Sisa = Sisa belum diambil − diambil − akan. Dihitung di server saat unduh/pratinjau, jadi selalu mengikuti pengaturan terbaru.
+- **Reset otomatis tahunan**: semua pengaturan disimpan per tahun; tahun baru (WIB) otomatis mulai dari default tanpa menghapus riwayat transaksi maupun pengaturan tahun lalu.
 - Tabel baru `holidays` dan `signatures` dibuat otomatis saat pertama dipakai (`schema-v5.sql` disertakan bila ingin menjalankannya manual).
 - Validasi `form-save` diperketat (hanya field yang dikenal yang disimpan). **Tidak ada migrasi SQL baru.**
 
