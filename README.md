@@ -24,6 +24,7 @@ Versi ini merombak V3 menjadi sistem internal dengan **dua peran saja: Admin dan
 - **Tanda tangan digital**: menu *Tanda Tangan* menyimpan PNG TTD per nama. Tombol *Tandai ditandatangani* (atau pilih beberapa surat lalu *Tandai Ditandatangani (n)*) membuka pratinjau ala Excel per sheet dengan kotak ceklis tiap penandatangan; gambar PNG masuk ke kolom TTD dan ikut ke semua unduhan Excel. Unduhan dari dialog = satu sheet per karyawan.
 - **Pencatatan mengikuti tanggal mulai izin**: kolom tanggal, urutan daftar/laporan, kalender, dan filter memakai tanggal mulai (bukan tanggal pengajuan).
 - **Kalender (revisi)**: titik indikator hanya muncul di *tanggal mulai* izin; filter karyawan/divisi berupa dropdown yang bisa dicari (data dari Data Karyawan), dengan opsi "Semua Karyawan / Divisi".
+- **Statistik dinamis**: kartu ringkasan di Laporan (Total Form, Sudah/Belum TTD, per kategori, Total Karyawan) dihitung ulang mengikuti filter karyawan/divisi, kategori, dan bulan kalender yang aktif.
 - Tabel baru `holidays` dan `signatures` dibuat otomatis saat pertama dipakai (`schema-v5.sql` disertakan bila ingin menjalankannya manual).
 - Validasi `form-save` diperketat (hanya field yang dikenal yang disimpan). **Tidak ada migrasi SQL baru.**
 
