@@ -1,4 +1,4 @@
-# Surat Izin IPK V4.0 — Form Surat Izin Tidak Masuk
+# Personnel Desk V4.0 — Form Surat Izin Tidak Masuk
 
 Versi ini merombak V3 menjadi sistem internal dengan **dua peran saja: Admin dan Eksekutif**. Tidak ada login karyawan, HRD, atau Manajer.
 
@@ -20,6 +20,10 @@ Versi ini merombak V3 menjadi sistem internal dengan **dua peran saja: Admin dan
 - **Unduhan form Excel** kini hanya berisi satu formulir (tanpa formulir lain, tanpa sheet kosong), kolom Keperluan hanya berisi keperluan. Surat izin dapat dihapus oleh Admin (tombol Hapus).
 - **Rekap form surat izin**: halaman Form Surat Izin punya filter tanggal (periode izin yang beririsan dengan rentang), tombol "Bulan ini", Reset, dan **Unduh Excel**. File berisi semua surat hasil filter (nama, status, kategori ikut terfilter), disusun dari atas ke bawah berurutan tanggal izin, satu formulir per halaman cetak (maks. 500 surat per unduhan).
 - **Penanda tangan dengan dropdown**: kolom Nama HRD, Manager, dan Supervisor pada form baru menampilkan daftar karyawan aktif yang jabatannya mengandung HRD / Manager / Supervisor (juga "manajer", "spv"), dan tetap bisa diketik manual untuk nama baru. Jika hanya ada satu kandidat, otomatis terisi.
+- **Laporan berbentuk kalender (V4.2)**: kalender bulanan (Minggu merah, tanggal merah custom oleh Admin), titik berwarna per kategori (biru = Cuti, merah = Sakit, kuning = Izin, ungu = Izin Pulang Cepat), daftar karyawan per tanggal, pratinjau surat + unduh Excel di bawah kalender, kartu ringkasan, serta **Export / Import Excel** (template impor tersedia; baris duplikat dilewati; kategori kosong dianggap Cuti).
+- **Tanda tangan digital**: menu *Tanda Tangan* menyimpan PNG TTD per nama. Tombol *Tandai ditandatangani* (atau pilih beberapa surat lalu *Tandai Ditandatangani (n)*) membuka pratinjau ala Excel per sheet dengan kotak ceklis tiap penandatangan; gambar PNG masuk ke kolom TTD dan ikut ke semua unduhan Excel. Unduhan dari dialog = satu sheet per karyawan.
+- **Pencatatan mengikuti tanggal mulai izin**: kolom tanggal, urutan daftar/laporan, kalender, dan filter memakai tanggal mulai (bukan tanggal pengajuan).
+- Tabel baru `holidays` dan `signatures` dibuat otomatis saat pertama dipakai (`schema-v5.sql` disertakan bila ingin menjalankannya manual).
 - Validasi `form-save` diperketat (hanya field yang dikenal yang disimpan). **Tidak ada migrasi SQL baru.**
 
 ## Struktur
